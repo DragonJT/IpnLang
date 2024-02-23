@@ -2,7 +2,7 @@
 import Tokenize from './Tokenizer.js';
 import Parser from './Parser.js';
 
-function Level0Compiler(main, code){
+function Level0Compiler(code){
     var tokens = Tokenize(code);
     //copied quite a lot from https://github.com/ColinEberhardt/chasm
 
@@ -181,24 +181,22 @@ function Level0Compiler(main, code){
             if(parser.OutOfBounds()){
                 return;
             }
-            if(parser.Is('Varname', 'EXPORT')){
-                functions.push(parser.ParseFunction(true));
-            }
-            else if(parser.Is('Varname', 'FN')){
-                functions.push(parser.ParseFunction(false));
-            }
-            else if(parser.Is('Varname', 'IMPORT')){
+            if(parser.Is('Varname', 'import')){
                 importFunctions.push(parser.ParseImportFunction());
             }
+            else if(parser.Is('Varname', 'export')){
+                parser.index++;
+                functions.push(parser.ParseFunction(true));
+            }
             else{
-                throw "Unexpected token: "+JSON.stringify(parser.Token());
+                functions.push(parser.ParseFunction(false));
             }
         }
     }
     FindFunctions();
 
     function EmitFunctionWasm(f){
-        var locals = {INT:[]};
+        var locals = {int:[]};
         var wasm = [];
         var tokens = f.tokens;
         
@@ -228,7 +226,7 @@ function Level0Compiler(main, code){
                     return p;
                 }
             }
-            for(var l of locals.INT){
+            for(var l of locals.int){
                 if(l.name == name){
                     return l;
                 }
@@ -258,7 +256,7 @@ function Level0Compiler(main, code){
 
         function FindLoopInBlock(){
             for(var i=0;i<blocks.length;i++){
-                if(blocks[blocks.length - i - 1] == 'LOOP'){
+                if(blocks[blocks.length - i - 1] == 'loop'){
                     return i;
                 }
             }
@@ -269,18 +267,18 @@ function Level0Compiler(main, code){
             if(index>=tokens.length){
                 break;
             }
-            if(EmitLocals('INT')){}
+            if(EmitLocals('int')){}
             else if(tokens[index].type == 'Varname'){
-                if(tokens[index].value == 'IF'){
-                    blocks.push('IF');
+                if(tokens[index].value == 'if'){
+                    blocks.push('if');
                     wasm.push(Opcode.if, Blocktype.void);
                     index++;
                     if(!(tokens[index].type == 'Punctuation' && tokens[index].value == '{')){
                         throw "error expecting { "+JSON.stringify(tokens[index+1]);
                     }
                 }
-                else if(tokens[index].value == 'LOOP'){
-                    blocks.push('LOOP');
+                else if(tokens[index].value == 'loop'){
+                    blocks.push('loop');
                     wasm.push(Opcode.block, Blocktype.void);
                     wasm.push(Opcode.loop, Blocktype.void);
                     index++;
@@ -288,7 +286,7 @@ function Level0Compiler(main, code){
                         throw "error expecting { "+JSON.stringify(tokens[index+1]);
                     }
                 }
-                else if(tokens[index].value == 'BREAK'){
+                else if(tokens[index].value == 'break'){
                     var loopID = FindLoopInBlock();
                     if(loopID == -1){
                         throw "Error break statement should be inside a loop: "+JSON.stringify(tokens[index]);
@@ -318,10 +316,10 @@ function Level0Compiler(main, code){
             else if(tokens[index].type == 'Punctuation'){
                 if(tokens[index].value == '}'){
                     var blocktype = blocks.pop();
-                    if(blocktype == 'IF'){
+                    if(blocktype == 'if'){
                         wasm.push(Opcode.end);
                     }
-                    else if(blocktype == 'LOOP'){
+                    else if(blocktype == 'loop'){
                         wasm.push(Opcode.br, 0, Opcode.end, Opcode.end);
                     }
                     else{
@@ -366,7 +364,7 @@ function Level0Compiler(main, code){
             }
             index++;
         }
-        return [1, ...encodeLocal(locals.INT.length, Valtype.i32), ...wasm, Opcode.end];
+        return [1, ...encodeLocal(locals.int.length, Valtype.i32), ...wasm, Opcode.end];
     }
 
     var id = 0;
@@ -382,14 +380,14 @@ function Level0Compiler(main, code){
     function EmitTypeSection(){
         function GetValtype(typeName){
             switch(typeName){
-                case 'FLOAT': return Valtype.f32;
-                case 'INT': return Valtype.i32;
+                case 'float': return Valtype.f32;
+                case 'int': return Valtype.i32;
                 default: throw "Unexpected valtype: "+typeName;
             }
         }
     
         function GetReturnArray(returnType){
-            if(returnType == 'VOID')
+            if(returnType == 'void')
                 return [];
             else{
                 return [GetValtype(returnType)];
@@ -472,7 +470,7 @@ function Level0Compiler(main, code){
             for(var f of functions.filter(f=>f.export)){
                 exports[f.name] = obj.instance.exports[f.name];
             }
-            console.log(exports[main]());
+            console.log(exports.Main());
         }
     );
 }

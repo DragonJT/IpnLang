@@ -26,9 +26,9 @@ class Parser{
     }
 
     ParseFunction(_export){
-        var returnType = this.Value(1);
-        var name = this.Value(2);
-        this.index+=3;
+        var returnType = this.Value(0);
+        var name = this.Value(1);
+        this.index+=2;
         var parameters = [];
         while(true){
             if(this.Is('Punctuation', '{')){
