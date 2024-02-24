@@ -1,7 +1,8 @@
+
 function Tokenize(code){
     var index = 0;
     var tokens = [];
-    var doublePunctuation = ['++', '--', '+=', '-='];
+    var doublePunctuation = [ '+=', ':=' ];
 
     function IsDigit(c){
         return c>='0' && c<='9';

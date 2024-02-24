@@ -1,5 +1,4 @@
-import Level0Compiler from './Level0Compiler.js';
-import Level1Compiler from './Level1Compiler.js';
+import Compiler from './Compiler.js';
 const code = ` 
 import void PrintInt int i #{
     console.log(i);
@@ -10,7 +9,7 @@ int GetValue int x int y{
 }
 
 export int Main{
-    int{x y}
+    0 := x
     loop{
         2 += x 
         x PrintInt
@@ -18,10 +17,9 @@ export int Main{
             break
         }
     }
-    5 1 - = y
+    5 1 - := y
     4 4 GetValue = x
     x y *
 }`;
 
-//const level0 = Level1Compiler(code);
-Level0Compiler(code);
+Compiler(code);
