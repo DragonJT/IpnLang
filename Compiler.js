@@ -2,12 +2,14 @@
 import Tokenize from './Tokenizer.js';
 import Types from './Types.js';
 import ILToWasm from './ILToWasm.js';
+import InsertGlobalMemAddressConst from './InsertGlobalMemAddressConst.js';
 
 function Compiler(code){
     var types = new Types();
     var tokens = Tokenize(code);
     var importFunctions = [];
     var functions = [];
+    var singletons = [];
 
     function FindFunctions(){
         function ParseFunction(_export){
@@ -64,10 +66,32 @@ function Compiler(code){
             }
         }
 
+        function ParseClass(type){
+            var name = tokens[i+1].value;
+            i+=2;
+            var fields = [];
+            if(tokens[i].type == 'Punctuation' && tokens[i].value == '{'){
+                i++;
+                while(true){
+                    if(tokens[i].type == 'Punctuation' && tokens[i].value == '}'){
+                        i++;
+                        return {type, name, fields};
+                    }
+                    else{
+                        fields.push({type:tokens[i].value, name:tokens[i+1].value});
+                        i+=2;
+                    }
+                }
+            }
+        }
+
         var i = 0;
         while(true){
             if(i>=tokens.length){
                 return;
+            }
+            if(tokens[i].type == 'Varname' && tokens[i].value == 'singleton'){
+                singletons.push(ParseClass('singleton'));
             }
             if(tokens[i].type == 'Varname' && tokens[i].value == 'import'){
                 importFunctions.push(ParseImportFunction());
@@ -118,13 +142,17 @@ function Compiler(code){
         }
         
         function UpdateStackFromFunctionSignatureName(functionSignatureName){
+            var stackIncreaseAmount = 0;
             var functionSignature = types.GetFunctionSignature(functionSignatureName);
-                for(var p of functionSignature.parameters){
-                    PopStack(p);
-                }
-                if(functionSignature.returnType!='void'){
-                    PushStack(functionSignature.returnType);
-                }
+            for(var p of functionSignature.parameters){
+                stackIncreaseAmount --;
+                PopStack(p);
+            }
+            if(functionSignature.returnType!='void'){
+                PushStack(functionSignature.returnType);
+                stackIncreaseAmount++;
+            }
+            return stackIncreaseAmount;
         }
     
         function GetIdentifier(name){
@@ -140,6 +168,12 @@ function Compiler(code){
                     return l;
                 }
             }
+            for(var s of singletons){
+                if(s.name == name){
+                    s.identifierType = 'singleton';
+                    return s;
+                }
+            }
             for(var f of functions){
                 if(f.name == name){
                     f.identifierType = 'function';
@@ -152,7 +186,7 @@ function Compiler(code){
                     return f;
                 }
             }
-            throw "Cant find identifier";
+            throw "Cant find identifier: '"+name+"'";
         }
     
         var stack = [];
@@ -163,10 +197,10 @@ function Compiler(code){
             var b = PopStackGetType();
             if(a==b){
                 if(a == 'int'){
-                    func.il.push({type:'i32_'+op});
+                    func.il.push({type:'i32_'+op, stackIncreaseAmount:-1});
                 }
                 else if(a=='float'){
-                    func.il.push({type:'f32_'+op});
+                    func.il.push({type:'f32_'+op, stackIncreaseAmount:-1});
                 }
                 else{
                     throw "Unexpected type: "+a;
@@ -183,10 +217,10 @@ function Compiler(code){
             var b = PopStackGetType();
             if(a==b){
                 if(a == 'int'){
-                    func.il.push({type:'i32_'+op});
+                    func.il.push({type:'i32_'+op, stackIncreaseAmount:-1});
                 }
                 else if(a=='float'){
-                    func.il.push({type:'f32_'+op});
+                    func.il.push({type:'f32_'+op, stackIncreaseAmount:-1});
                 }
                 else{
                     throw "Unexpected type: "+a;
@@ -198,6 +232,14 @@ function Compiler(code){
             }
         }
 
+        function GetField(singleton, name){
+            for(var f of singleton.fields){
+                if(f.name == name){
+                    return f;
+                }
+            }
+        }
+
         while(true){
             if(index>=tokens.length){
                 break;
@@ -205,7 +247,7 @@ function Compiler(code){
             if(tokens[index].type == 'Varname'){
                 if(tokens[index].value == 'if'){
                     blocks.push('if');
-                    func.il.push({type:'if'});
+                    func.il.push({type:'if', stackIncreaseAmount:-1});
                     index++;
                     PopStack('bool');
                     if(!(tokens[index].type == 'Punctuation' && tokens[index].value == '{')){
@@ -214,7 +256,7 @@ function Compiler(code){
                 }
                 else if(tokens[index].value == 'loop'){
                     blocks.push('loop');
-                    func.il.push({type:'loop'});
+                    func.il.push({type:'loop', stackIncreaseAmount:0});
                     index++;
                     if(!(tokens[index].type == 'Punctuation' && tokens[index].value == '{')){
                         throw "Expecting { "+JSON.stringify(tokens[index+1]);
@@ -226,36 +268,55 @@ function Compiler(code){
                         throw "Break statement should be inside a loop: "+JSON.stringify(tokens[index]);
                     }
                     var value = loopID + 1;
-                    func.il.push({type:'br', value});
+                    func.il.push({type:'br', value, stackIncreaseAmount:0});
                 }
                 else{
                     var value = GetIdentifier(tokens[index].value);
-                    if(value.identifierType == 'function'){
-                        func.il.push({type:'call', value});
-                        UpdateStackFromFunctionSignatureName(value.functionSignatureName);
+                    if(value.identifierType == 'singleton'){
+                        if(tokens[index+1].type == 'Punctuation' && tokens[index+1].value == '.'){
+                            if(tokens[index+2].type == 'Varname'){
+                                var field = GetField(value, tokens[index+2].value);
+                                index+=2;
+                                func.il.push({type:'get_global', value:field, stackIncreaseAmount:1});
+                                PushStack(field.type);
+                            }
+                            else{
+                                throw "Expecting varname got: "+JSON.stringify(tokens[index+2]);
+                            }
+                        }
+                        else{
+                            throw "Expecting . got: "+JSON.stringify(tokens[index+1])
+                        }
+                    }
+                    else if(value.identifierType == 'function'){
+                        var stackIncreaseAmount = UpdateStackFromFunctionSignatureName(value.functionSignatureName);
+                        func.il.push({type:'call', value, stackIncreaseAmount});
                     }
                     else if(value.identifierType == 'local'){
-                        func.il.push({type:'get_local', value});
+                        func.il.push({type:'get_local', value, stackIncreaseAmount:1});
                         PushStack(value.type);
+                    }
+                    else{
+                        throw "Unexpected identifiertype: "+JSON.stringify(value);
                     }
                 }
             }
             else if(tokens[index].type == 'Int'){
-                func.il.push({type:'i32_const', value:tokens[index].value});
+                func.il.push({type:'i32_const', value:tokens[index].value, stackIncreaseAmount:1});
                 PushStack('int');
             }
             else if(tokens[index].type == 'Float'){
-                func.il.push({type:'f32_const', value:tokens[index].value});
+                func.il.push({type:'f32_const', value:tokens[index].value, stackIncreaseAmount:1});
                 PushStack('float');
             }
             else if(tokens[index].type == 'Punctuation'){
                 if(tokens[index].value == '}'){
                     var blocktype = blocks.pop();
                     if(blocktype == 'if'){
-                        func.il.push({type:'end_if'})
+                        func.il.push({type:'end_if', stackIncreaseAmount:0})
                     }
                     else if(blocktype == 'loop'){
-                        func.il.push({type:'end_loop'})
+                        func.il.push({type:'end_loop', stackIncreaseAmount:0})
                     }
                     else{
                         throw "Unexpected blocktype: "+blocktype;
@@ -288,10 +349,10 @@ function Compiler(code){
                         }
                         PopStack(value.type);
                         if(value.type == 'float'){
-                            func.il.push({type:'f32_+=', value});
+                            func.il.push({type:'f32_+=', value, stackIncreaseAmount:-1});
                         }
                         else if(value.type == 'int'){
-                            func.il.push({type:'i32_+=', value});
+                            func.il.push({type:'i32_+=', value, stackIncreaseAmount:-1});
                         }
                         else{
                             throw "+= Unexpected type: "+type;
@@ -306,12 +367,36 @@ function Compiler(code){
                     if(tokens[index+1].type == 'Varname'){
                         var name = tokens[index+1].value;
                         var value = GetIdentifier(name);
-                        if(value.identifierType=='function'){
+                        if(value.identifierType == 'singleton'){
+                            if(tokens[index+2].type == 'Punctuation' && tokens[index+2].value == '.'){
+                                if(tokens[index+3].type == 'Varname'){
+                                    var field = GetField(value, tokens[index+3].value);
+                                    index+=3;
+                                    func.il.push({type:'set_global', value:field, stackIncreaseAmount:-1});
+                                    PopStack(field.type);
+                                }
+                                else{
+                                    throw "Expecting varname got: "+JSON.stringify(tokens[index+2]);
+                                }
+                            }
+                            else{
+                                index++;
+                                for(var i=value.fields.length-1;i>=0;i--){
+                                    var f = value.fields[i];
+                                    func.il.push({type:'set_global', value:f, stackIncreaseAmount:-1});
+                                    PopStack(f.type);
+                                }
+                            }
+                        }
+                        else if(value.identifierType=='local'){
+                            PopStack(value.type);
+                            func.il.push({type:'set_local', value, stackIncreaseAmount:-1});
+                            index++;
+                            
+                        }
+                        else{
                             throw "Got function type for variable";
                         }
-                        PopStack(value.type);
-                        func.il.push({type:'=', value});
-                        index++;
                     }
                     else{
                         throw "= Expecting to be followed by varname: "+JSON.stringify(tokens[index+1]);
@@ -323,7 +408,7 @@ function Compiler(code){
                         var type = PopStackGetType();
                         var value = {type, name};
                         func.locals.push(value);
-                        func.il.push({type:':=', value});
+                        func.il.push({type:'set_local', value, stackIncreaseAmount:-1});
                         index++;
                         
                     }
@@ -350,9 +435,18 @@ function Compiler(code){
         }
     }
     
+    var memLoc = 0;
+    for(var s of singletons){
+        for(var f of s.fields){
+            f.memLoc = memLoc;
+            memLoc+=4;
+        }
+    }
+
     for(var f of functions){
         CreateIL(f);
     }
+    InsertGlobalMemAddressConst(functions);
     ILToWasm(functions, importFunctions);
 
 }

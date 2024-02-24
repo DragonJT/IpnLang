@@ -122,11 +122,34 @@ function ILToWasm(functions, importFunctions){
                 wasm.push(Emitter.Opcode.f32_add);
                 wasm.push(Emitter.Opcode.set_local, ...localIDBytes);
             }
-            else if(command.type == '='){
+            else if(command.type == 'set_local'){
                 wasm.push(Emitter.Opcode.set_local, ...Emitter.unsignedLEB128(command.value.id));
             }
-            else if(command.type == ':='){
-                wasm.push(Emitter.Opcode.set_local, ...Emitter.unsignedLEB128(command.value.id));
+            else if(command.type == 'get_global'){
+                wasm.push(Emitter.Opcode.i32_const, ...Emitter.signedLEB128(command.value.memLoc));
+                if(command.value.type == 'int'){
+                    wasm.push(Emitter.Opcode.i32_load, 0x00, 0x00);
+                }
+                else if(command.value.type == 'float'){
+                    wasm.push(Emitter.Opcode.f32_load, 0x00, 0x00);
+                }
+                else{
+                    throw "Unexpected get_global type: "+JSON.stringify(command);
+                }
+            }
+            else if(command.type == 'global_mem_address_const'){
+                wasm.push(Emitter.Opcode.i32_const, ...Emitter.signedLEB128(command.value));
+            }
+            else if(command.type == 'store'){
+                if(command.value.type == 'int'){
+                    wasm.push(Emitter.Opcode.i32_store, 0x00, 0x00);
+                }
+                else if(command.value.type == 'float'){
+                    wasm.push(Emitter.Opcode.f32_store, 0x00, 0x00);
+                }
+                else{
+                    throw "Unexpected get_global type: "+JSON.stringify(command);
+                }
             }
             else{
                 throw "FunctionWasm: Unexpected token: "+JSON.stringify(command);
