@@ -4,11 +4,23 @@ import void PrintInt int i #{
     console.log(i);
 }
 
+import void PrintFloat float f #{
+    console.log(f);
+}
+
 int GetValue int x int y{
     x y *
 }
 
 export int Main{
+    1.5f := j
+    loop{
+        1.1f += j
+        j PrintFloat
+        j 15f > if{
+            break
+        }
+    }
     0 := x
     loop{
         2 += x 
@@ -18,8 +30,8 @@ export int Main{
         }
     }
     5 1 - := y
-    4 4 GetValue = x
-    x y *
+    4 4 GetValue := z
+    z y *
 }`;
 
 Compiler(code);

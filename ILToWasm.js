@@ -18,9 +18,13 @@ function ILToWasm(functions, importFunctions){
             id++;
         }
         var ints = [];
+        var floats = [];
         for(var l of func.locals){
             if((l.type == 'int') || (l.type == 'bool')){
                 ints.push(l);
+            }
+            else if(l.type == 'float'){
+                floats.push(l);
             }
             else{
                 throw "Unexpected type: "+JSON.stringify(l);
@@ -28,13 +32,17 @@ function ILToWasm(functions, importFunctions){
         }
 
         var localBytes = [];
-        for(var i of ints){
-            i.id = id;
-            id++;
+        function EmitLocalType(localsOfType, valtype){
+            for(var l of localsOfType){
+                l.id = id;
+                id++;
+            }
+            if(localsOfType.length > 0){
+                localBytes.push(Emitter.encodeLocal(localsOfType.length, valtype));
+            }
         }
-        if(ints.length > 0){
-            localBytes.push(Emitter.encodeLocal(ints.length, Emitter.Valtype.i32));
-        }
+        EmitLocalType(ints, Emitter.Valtype.i32);
+        EmitLocalType(floats, Emitter.Valtype.f32);
 
         var wasm = [];
         for(var command of func.il){
@@ -54,8 +62,11 @@ function ILToWasm(functions, importFunctions){
             else if(command.type == 'br'){
                 wasm.push(Emitter.Opcode.br, ...Emitter.unsignedLEB128(command.value));
             }
-            else if(command.type == 'const_int'){
+            else if(command.type == 'i32_const'){
                 wasm.push(Emitter.Opcode.i32_const, ...Emitter.signedLEB128(command.value));
+            }
+            else if(command.type == 'f32_const'){
+                wasm.push(Emitter.Opcode.f32_const, ...Emitter.ieee754(command.value));
             }
             else if(command.type == 'end_if'){
                 wasm.push(Emitter.Opcode.end);
@@ -63,28 +74,52 @@ function ILToWasm(functions, importFunctions){
             else if(command.type == 'end_loop'){
                 wasm.push(Emitter.Opcode.br, 0, Emitter.Opcode.end, Emitter.Opcode.end);
             }
-            else if(command.type == '+'){
+            else if(command.type == 'i32_add'){
                 wasm.push(Emitter.Opcode.i32_add);
             }
-            else if(command.type == '*'){
+            else if(command.type == 'i32_mul'){
                 wasm.push(Emitter.Opcode.i32_mul);
             }
-            else if(command.type == '/'){
+            else if(command.type == 'i32_div'){
                 wasm.push(Emitter.Opcode.i32_div);
             }
-            else if(command.type == '-'){
+            else if(command.type == 'i32_sub'){
                 wasm.push(Emitter.Opcode.i32_sub);
             }
-            else if(command.type == '<'){
+            else if(command.type == 'i32_lt'){
                 wasm.push(Emitter.Opcode.i32_lt);
             }
-            else if(command.type == '>'){
+            else if(command.type == 'i32_gt'){
                 wasm.push(Emitter.Opcode.i32_gt);
             }
-            else if(command.type == '+='){
+            else if(command.type == 'f32_add'){
+                wasm.push(Emitter.Opcode.f32_add);
+            }
+            else if(command.type == 'f32_mul'){
+                wasm.push(Emitter.Opcode.f32_mul);
+            }
+            else if(command.type == 'f32_div'){
+                wasm.push(Emitter.Opcode.f32_div);
+            }
+            else if(command.type == 'f32_sub'){
+                wasm.push(Emitter.Opcode.f32_sub);
+            }
+            else if(command.type == 'f32_lt'){
+                wasm.push(Emitter.Opcode.f32_lt);
+            }
+            else if(command.type == 'f32_gt'){
+                wasm.push(Emitter.Opcode.f32_gt);
+            }
+            else if(command.type == 'i32_+='){
                 var localIDBytes = Emitter.unsignedLEB128(command.value.id);
                 wasm.push(Emitter.Opcode.get_local, ...localIDBytes);
                 wasm.push(Emitter.Opcode.i32_add);
+                wasm.push(Emitter.Opcode.set_local, ...localIDBytes);
+            }
+            else if(command.type == 'f32_+='){
+                var localIDBytes = Emitter.unsignedLEB128(command.value.id);
+                wasm.push(Emitter.Opcode.get_local, ...localIDBytes);
+                wasm.push(Emitter.Opcode.f32_add);
                 wasm.push(Emitter.Opcode.set_local, ...localIDBytes);
             }
             else if(command.type == '='){

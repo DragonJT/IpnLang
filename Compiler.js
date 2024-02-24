@@ -157,6 +157,47 @@ function Compiler(code){
     
         var stack = [];
         var index = 0;
+
+        function ArithmeticOperator(op){
+            var a = PopStackGetType();
+            var b = PopStackGetType();
+            if(a==b){
+                if(a == 'int'){
+                    func.il.push({type:'i32_'+op});
+                }
+                else if(a=='float'){
+                    func.il.push({type:'f32_'+op});
+                }
+                else{
+                    throw "Unexpected type: "+a;
+                }
+                PushStack(a);
+            }
+            else{
+                throw "Arithmetic operator: expecting 2 of the same types: "+op+" : "+a+" -- "+b;
+            }
+        }
+
+        function ComparisonOperator(op){
+            var a = PopStackGetType();
+            var b = PopStackGetType();
+            if(a==b){
+                if(a == 'int'){
+                    func.il.push({type:'i32_'+op});
+                }
+                else if(a=='float'){
+                    func.il.push({type:'f32_'+op});
+                }
+                else{
+                    throw "Unexpected type: "+a;
+                }
+                PushStack('bool');
+            }
+            else{
+                throw "Comparison operator: expecting 2 of the same types: "+op+" : "+a+" -- "+b;
+            }
+        }
+
         while(true){
             if(index>=tokens.length){
                 break;
@@ -200,8 +241,12 @@ function Compiler(code){
                 }
             }
             else if(tokens[index].type == 'Int'){
-                func.il.push({type:'const_int', value:tokens[index].value});
+                func.il.push({type:'i32_const', value:tokens[index].value});
                 PushStack('int');
+            }
+            else if(tokens[index].type == 'Float'){
+                func.il.push({type:'f32_const', value:tokens[index].value});
+                PushStack('float');
             }
             else if(tokens[index].type == 'Punctuation'){
                 if(tokens[index].value == '}'){
@@ -217,28 +262,22 @@ function Compiler(code){
                     }
                 }
                 else if(tokens[index].value == '+'){
-                    func.il.push({type:'+'});
-                    UpdateStackFromFunctionSignatureName('(int int)int')
+                    ArithmeticOperator('add');
                 }
                 else if(tokens[index].value == '*'){
-                    func.il.push({type:'*'});
-                    UpdateStackFromFunctionSignatureName('(int int)int')
+                    ArithmeticOperator('mul');
                 }
                 else if(tokens[index].value == '/'){
-                    func.il.push({type:'/'});
-                    UpdateStackFromFunctionSignatureName('(int int)int')
+                    ArithmeticOperator('div');
                 }
                 else if(tokens[index].value == '-'){
-                    func.il.push({type:'-'});
-                    UpdateStackFromFunctionSignatureName('(int int)int')
+                    ArithmeticOperator('sub');
                 }
                 else if(tokens[index].value == '<'){
-                    func.il.push({type:'<'});
-                    UpdateStackFromFunctionSignatureName('(int int)bool')
+                    ComparisonOperator('lt');
                 }
                 else if(tokens[index].value == '>'){
-                    func.il.push({type:'>'});
-                    UpdateStackFromFunctionSignatureName('(int int)bool')
+                    ComparisonOperator('gt');
                 }
                 else if(tokens[index].value == '+='){
                     if(tokens[index+1].type == 'Varname'){
@@ -248,7 +287,15 @@ function Compiler(code){
                             throw "Got function type for variable";
                         }
                         PopStack(value.type);
-                        func.il.push({type:'+=', value});
+                        if(value.type == 'float'){
+                            func.il.push({type:'f32_+=', value});
+                        }
+                        else if(value.type == 'int'){
+                            func.il.push({type:'i32_+=', value});
+                        }
+                        else{
+                            throw "+= Unexpected type: "+type;
+                        }
                         index++;
                     }
                     else{

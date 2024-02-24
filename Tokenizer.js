@@ -66,7 +66,7 @@ function Tokenize(code){
                     continue;
                 }
                 if(c=='f'){
-                    AddToken('Number', start, index);
+                    AddToken('Float', start, index);
                     index++;
                 }
                 else if(c=='l'){
